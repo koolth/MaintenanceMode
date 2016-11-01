@@ -1,0 +1,126 @@
+<?php namespace ProcessWire;
+
+/**
+ * ProcessWire 'Maintenance Mode' module
+ *
+ * Allows the website to be put into Maintenance Mode which locks out all users (except superuser) and displays Under Maintenance message.
+ * 
+ * https://github.com/koolth/MaintenanceMode
+ * 
+ * @license The MIT License (MIT)
+ * @copyright 2016 Dr. John Flackett (koolth pty ltd - https://koolth.com.au)
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
+ */
+
+class MaintenanceMode extends WireData implements Module, ConfigurableModule {
+
+	/**
+	 * MaintenanceMode module information
+	 * @return array
+	 */
+	public static function getModuleInfo() {
+		return array(
+			'title' => __('Maintenance Mode'), 
+			'version' => 010, 
+			'author' => 'Dr. John Flackett',
+			'summary' => __('Allows the website to be put into Maintenance Mode (locks out non-superusers).'),
+			'href' => 'https://github.com/koolth',
+			'singular' => true, 
+			'autoload' => true, 
+			'icon' => 'toggle-off', 
+			);
+	}
+
+	/**
+     * Setup the fields for the admin backend.
+     * @param array $data Module data (from DB).
+	 * @return Fields collection of this modules fields
+     */
+    public static function getModuleConfigInputfields(array $data) {   
+        $fields = new InputfieldWrapper(); 
+        $field = wire('modules')->get('InputfieldCheckbox');
+		$field->name = 'maint_mode';
+        $field->label = __('Maintenance Mode');
+		$field->value = (isset($data['maint_mode'])) ? $data['maint_mode'] : 1;
+        $field->checked = ($field->value == 1) ? 'checked' : '';
+		$field->icon = 'toggle-off';
+        $field->columnWidth = 100;
+        $field->description = __('Disable non-superuser logins (& show message).');
+        $fields->add($field);
+		return $fields;
+	} 
+
+	/**
+	 * Initialize the MaintenanceMode module
+	 */
+	public function init() {
+		$this->addHook('Session::allowLogin', $this, 'allowLogin');
+		$this->pages->addHookAfter('save', $this, 'isMaintMode'); 
+	}
+
+	/**
+     * Check if user is allowed to login
+     * @param HookEvent $event
+     */
+    public function allowLogin(HookEvent $event) {
+        $success = true;
+		if($this->maint_mode) {
+			$userName = $event->arguments[0];
+			if ($userName && $userName == wire('sanitizer')->userName($userName)) {
+				$user = wire('users')->get('name=' . $userName);
+				if ($user && $user->id) {
+					$success = $this->canLogin($user);
+				}
+			}
+		}
+		$this->error("Site is in Maintenance Mode!");
+        $event->return = $success;
+    }
+
+	/**
+     * Checks to see if user is allowed to login
+     * @param User $user The current user
+     * @return bool true, if in Maint Mode and user is a superuser, else false
+     */
+    private function canLogin(User $user) {
+        $success = true;
+        if ($user->id && !$user->hasRole('superuser')) {
+            $success = false;
+        }
+        return $success;
+    }
+
+	/**
+	 * If necessary, show maint mode message in admin every time a page is saved
+	 * @param HookEvent $event
+	 */
+	public function isMaintMode($event) {
+		if($this->maint_mode) {
+			$this->showMaintMessage();
+		} 
+	}
+
+	/**
+	 * Display Maint Mode warning message in Admin
+	**/
+	private function showMaintMessage() {
+		$this->warning("WARN: Site is in Maintenance Mode! Change MaintenanceMode module settings to allow non-superusers back on.");
+	}  
+
+}
